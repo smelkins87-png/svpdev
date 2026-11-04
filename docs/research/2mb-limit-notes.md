@@ -1,6 +1,6 @@
 # Getting past the 2MB limit on the SVP: research notes
 
-These notes cover a full pass over the repository: the boards, the netlists, the die photos, the samples, `ssp16asm`/`svptool`, the project wiki, and notaz's PicoDrive SVP emulation used as a reference. The goal was to list every quirk, bug and oversight that bears on the 2MB ROM ceiling, and every route around it that needs **no additional hardware**.
+These notes cover a full pass over the repository: the boards, the netlists, the die photos, the samples, `ssp16asm`/`svptool`, the project wiki, notaz's PicoDrive SVP emulation, and notaz's `svpdoc.txt` (2014-09-23 revision, cited below as **svpdoc**). The goal was to list every quirk, bug and oversight that bears on the 2MB ROM ceiling, and every route around it that needs **no additional hardware**.
 
 Confidence tags used below:
 
@@ -13,7 +13,7 @@ Confidence tags used below:
 ## 0. Bottom line
 
 1. **On a stock cart the physical ROM bus is 2MB wide.** The ROM footprint routes only A0–A19 (word address). The SVP die has exactly 38 pads labelled "ROM", which is A0–A19 + D0–D15 + /CE + /OE. Software alone cannot make one 2MB chip return more than 2MB of distinct bits.
-2. **The address space is wider than the ROM.** Both the 68k and the SSP side decode a 4MB cart space (the SSP's PM registers take 5 high-address bits, 21-bit word addresses). The window **0x200000–0x2FFFFF (68k bytes) = 0x100000–0x17FFFF (SSP words)** is marked "unused?" by every reference and appears to have **never been probed on hardware**. The same goes for the DRAM-adjacent windows. These are the best "indirect" leads. They can be tested with a pure software ROM on the existing EPROM board, and a probe is included below (§A1).
+2. **The address space is wider than the ROM.** Both the 68k and the SSP side decode a 4MB cart space (the SSP's PM registers take 5 high-address bits, 21-bit word addresses). The window **0x200000–0x2FFFFF (68k bytes) = 0x100000–0x17FFFF (SSP words)** has been looked at only from the 68k side. svpdoc reports that 68k reads there return "data from internal bus (last word read by SSP160x)", so there's no ROM behind it as seen from the 68k. **What the SSP gets when it aims a PM at that window is still unknown** (svpdoc marks the SSP column "?"), and so is whether any die pad toggles when it does. That's the best remaining "indirect" lead. It can be tested with a pure software ROM on the existing EPROM board, and a probe is included below (§A1).
 3. **The practical ways past 2MB are about effective capacity.** The SVP is a 23 MHz DSP sitting next to 128KB of DRAM, with hardware address-remapping views and a nibble-masked write mode. Used as a streaming decompressor, asset transformer and procedural generator, it can make 2MB of ROM do the work of several times that (§C).
 4. **Space is being wasted inside the 2MB right now.** The sample ROM layout zero-pads ~124KB that doesn't need padding. Two toolchain bugs also make it easy to silently lose code or data (§B, §D).
 
@@ -28,7 +28,7 @@ Confidence tags used below:
 | EPROM board | `boards/svp-eprom-board/README.md`: 27C160 (16Mbit). | 2MB |
 | SSP memory controller (emulated) | PicoDrive `ssp16.c` `pm_io()`: ROM read uses `addr \| ((mode & 0xf) << 16)`, so **only 4 of the 5 high-address bits** reach the ROM. | 2MB |
 | SSP program space | 16-bit PC. Only ROM words 0x0400–0xFBFF are executable from ROM (wiki "Timings"). | **128KB of executable ROM code** (separate, smaller limit) |
-| 68k map | notaz: `000000-1fffff ROM`, `200000-2fffff unused?`, `300000-31ffff DRAM`, `320000-38ffff unused?`, `390000/3a0000 cell arrange`. | 2MB ROM in a 4MB cart window |
+| 68k map | svpdoc §3: `000000-1fffff` ROM; `200000-2fffff` unused, reads return the SSP's internal bus; `300000-31ffff` DRAM; `320000-37ffff` **3 mirrors of DRAM**; `380000-38ffff` unused (internal bus); `390000`/`3a0000` cell arrange; `3b0000-3fffff` reads 0xFFFF. | 2MB ROM and 128KB DRAM in a 4MB cart window |
 | Assembler | `tools/ssp16asm/src/assembler/assembly.rs:330,391`: `ORG` takes a 16-bit word value, so code and data can only be ORG'd into the first 128KB. The output buffer is 4MB (`:323`). | Toolchain-only |
 
 The same table shows that **the address-generating logic (PM mode word, 68k decoder) covers 4MB, but the chip pins and the ROM cover 2MB.** That gap is where the unknowns are.
@@ -40,7 +40,7 @@ PM mode word layout (wiki "External registers behaviour", notaz naming): `d s nn
 * `aaaaa` (bits 4–0) = word-address bits 16–20, so the space is 21 bits = 2M words = **4MB**.
 * ROM: `0x00–0x0F`. DRAM: `0x18` (word 0x180000 ×2 = 68k **0x300000**). IRAM: `0x1C` + low `0x8000` (word 0x1C8000 ×2 = 68k **0x390000**).
 
-The SSP map is the 68k cart map divided by two, so **SSP word 0x100000–0x17FFFF ≡ 68k 0x200000–0x2FFFFF**. That window is "unused?" on both sides. A gate array that carries 5 high-address bits and decodes a 4MB space while leaving a 1MB hole is a strong hint that the hole was *reserved for something*: a second ROM, an SRAM, or the A20 line of a 32Mbit ROM. On standard Sega carts, 0x200000 is where SRAM or the upper half of a 4MB ROM lives. [INFERENCE]
+The SSP map is the 68k cart map divided by two, so **SSP word 0x100000–0x17FFFF ≡ 68k 0x200000–0x2FFFFF**. svpdoc confirms "the external memory space seems to match the one visible by 68k" and that "when auto-increment is performed, it affects all 21 address bits", so a ROM-read PM that increments past word 0xFFFFF carries straight into this window. A gate array that carries 5 high-address bits and decodes a 4MB space while leaving a 1MB hole is a strong hint that the hole was *reserved for something*: a second ROM, an SRAM, or the A20 line of a 32Mbit ROM. On standard Sega carts, 0x200000 is where SRAM or the upper half of a 4MB ROM lives. [INFERENCE]
 
 ---
 
@@ -49,9 +49,9 @@ The SSP map is the 68k cart map divided by two, so **SSP word 0x100000–0x17FFF
 ### A1. SSP PM reads with address bit 20 set (`mode` low byte 0x10–0x17) [SPECULATION, top priority]
 
 * **What:** Program a PM for ROM-style reads with `aaaaa = 0x10..0x17` (e.g. mode `0x0810`) and read.
-* **Why it matters:** The emulator masks with `& 0xf` (`ssp16.c pm_io`, `(mode & 0xfff0) == 0x0800` branch) and logs any other mode as "unhandled" returning 0. **Nobody has published what real hardware returns.** Possible outcomes:
+* **Why it matters:** The emulator masks with `& 0xf` (`ssp16.c pm_io`, `(mode & 0xfff0) == 0x0800` branch) and logs any other mode as "unhandled" returning 0. svpdoc only covers the 68k view of this window (internal-bus echo, §A3). **Nobody has published what the SSP gets back.** Possible outcomes:
   * a mirror of ROM 0–2MB (A20 ignored): rules this out cleanly;
-  * open bus / last value: rules it out;
+  * internal-bus echo / last value, the same as the 68k sees: the most likely result given svpdoc, and rules it out;
   * **different data**, or a pad toggling: this would mean the gate array drives a line that the PCB doesn't route (see A4), i.e. a hidden A20 or a second /CE.
 * **How to test:** Use the probe below with the 68k side sending `0x0810`, `0x0811`, … `0x0817` through XST and dumping DRAM 0x300000 onwards. Compare against the same read with `0x0800`. The ROM image should place distinct marker words at byte 0x000000 and at every 128KB boundary, so a mirror shows up immediately. This snippet assembles cleanly with the current `ssp16asm`. The bytes were checked: `ld -, ext1` → `0009`, matching VR's own test code.
 
@@ -85,10 +85,11 @@ probe_loop:             ld a, ext1
 
 (Remember the blind-write increment quirk noted in `samples/SVP_basic_gfx/svp_gfx.svp:59-71`: the first DRAM word written may land one word later than programmed.)
 
-### A2. DRAM capacity and the 0x19–0x1F windows [SPECULATION]
+### A2. DRAM capacity and the 0x19–0x1F windows [mostly answered: FACT for the 68k side, SPECULATION for the SSP side]
 
 * **What:** The emulator accepts DRAM only when `(mode & 0x43ff) == 0x0018`. Modes `0x19, 0x1A, 0x1B, 0x1D, 0x1E, 0x1F` (word 0x190000–0x1FFFFF = 68k 0x320000–0x3FFFFF) are untested.
-* **Why it matters:** The 68k sees only 128KB of DRAM (0x300000–0x31FFFF). If the physical DRAM part on the VR board is larger than 64K×16, or if the SVP has a further DRAM address pad (see the "?" pads 124 and 146–149 next to the DRAM/"SRAM" group on the die photo), there could be **hidden working RAM**. More RAM doesn't add ROM, but it enlarges the decompression cache and makes the §C techniques far stronger.
+* **Update from svpdoc:** 68k 0x320000–0x37FFFF is **"3 mirrors of DRAM"**. The DRAM decode ignores the address bits above 128KB, which is strong evidence that **there is no hidden DRAM**, at least as seen from the 68k. This lead drops to low priority. The SSP-side modes `0x19`–`0x1B` are almost certainly the same mirrors. `0x1D`–`0x1F` (68k 0x3A0000+) are still worth one quick read.
+* **Why it mattered:** The 68k sees only 128KB of DRAM (0x300000–0x31FFFF). If the physical DRAM part on the VR board is larger than 64K×16, or if the SVP has a further DRAM address pad (see the "?" pads 124 and 146–149 next to the DRAM/"SRAM" group on the die photo), there could be **hidden working RAM**. More RAM doesn't add ROM, but it enlarges the decompression cache and makes the §C techniques far stronger.
 * **How to test:**
   1. Read the DRAM part number off the VR PCB and look up its organisation. This is a zero-cost check that nobody has written down in this repo.
   2. On the SSP: write a distinct pattern via mode `0x0818` at word 0x180000, then write a different pattern via `0x0819` (and up), then read both back. If the patterns alias, the window is a mirror. If both survive, there's extra RAM.
@@ -96,10 +97,15 @@ probe_loop:             ld a, ext1
   4. On the 68k: write 0x300000 and check whether 0x320000 changes (mirror test).
 * **Note:** the left-edge "SRAM" group on the die has about 20 labelled pads. That's too few for 16 data + multiplexed address + RAS/CAS/WE/OE unless data or address lines are shared with another bus. **How the DRAM is wired to the SVP is itself undocumented** and worth tracing on the VR PCB with a continuity meter (a measurement, not added hardware).
 
-### A3. 68k reads of 0x200000–0x2FFFFF and 0x320000–0x38FFFF [SPECULATION]
+### A3. 68k reads of 0x200000–0x2FFFFF and 0x320000–0x38FFFF [answered by svpdoc: FACT, not hardware-verified here]
 
 * Both are inside the 4MB /CE0 cartridge region the SVP sits on. The MD generates DTACK itself for this range, so reads won't hang. Contrast `samples/README.md`, which notes that hitting 0xA15000 without an SVP freezes a real console.
-* Test: dump these regions to screen with the 68k (reuse `SVP_mem_reader`'s display code). Mirrors, open-bus patterns (usually the last word fetched, often the next opcode) and real data each look distinctive.
+* svpdoc §3 already reports the answer:
+  * 0x200000–0x2FFFFF and 0x380000–0x38FFFF: "reads seem to return data from internal bus (last word read by SSP160x). Writes probably have no effect."
+  * 0x320000–0x37FFFF: three mirrors of DRAM.
+  * 0x3B0000–0x3FFFFF: reads 0xFFFF, writes have no effect.
+* So **there's no extra ROM visible from the 68k there.** Still worth a 10-minute confirmation dump with `SVP_mem_reader`'s display code, because svpdoc says "seem to".
+* **New quirk this exposes (a side channel):** the 68k can see *the last word the SSP read* through those windows. That's a zero-setup way for the 68k to peek at what the SSP is fetching, useful for debugging and synchronising a streaming decompressor (§C1) without spending XST handshakes. It doesn't add capacity.
 
 ### A4. Unlabelled die pads next to the ROM bus [SPECULATION]
 
@@ -116,9 +122,9 @@ probe_loop:             ld a, ext1
 
 ### A6. Mapper or bank registers on the 68k side [SPECULATION]
 
-* The SVP register block is 0xA15000–0xA1500F (`samples/*/svp.asm`: XST 0xA15000/2, status 0xA15004, 0xA15006 "halt?", 0xA15008 unknown "interrupt" pulse). PicoDrive decodes only `(a & ~0x0f) == 0xa15000`, so **0xA15010–0xA150FF and the odd offsets are unmapped in emulation and unprobed on hardware.**
+* The SVP register block is 0xA15000–0xA1500F (`samples/*/svp.asm`: XST 0xA15000/2, status 0xA15004, 0xA15006 "halt?", 0xA15008 unknown "interrupt" pulse). svpdoc lists **0xA1500A, 0xA1500C and 0xA1500E as "?" with a reset value of 0xFFFF**, so three registers have no known function. A bank or mode register would most plausibly live there. Probe them first: write each one, then re-read ROM, DRAM and the 0x200000 window from both CPUs. PicoDrive decodes only `(a & ~0x0f) == 0xa15000`, so **0xA15010–0xA150FF and the odd offsets are unmapped in emulation and unprobed on hardware.**
 * **0xA130F1–0xA130FF** (the standard Sega /TIME bank-register window used by SSF2-style mappers) has never been tried on the VR cart. If the SVP latches anything there, it could be a bank select. Test: write values, then re-read ROM at 0x080000+ from both the 68k and the SSP.
-* 0xA15006: the emulator comment says "probably has 'halt'" and VR writes it. Fully map what each bit does, because halting the SSP cleanly is required for safe DRAM handoff in §C1.
+* 0xA15006: svpdoc says VR "writes 0xa" before DMA from DRAM and 0 afterwards, "probably done to prevent SVP accessing DRAM". Fully map what each bit does, because halting the SSP cleanly is required for safe DRAM handoff in §C1.
 
 ### A7. Undocumented external-register behaviours [FACT from wiki, uses SPECULATION]
 
@@ -170,13 +176,19 @@ That gives up to **six simultaneously programmed memory streams** (PM0, PM1, PM2
 * **Throughput budget:** IRAM code runs at ~22 M instructions/s (≈44ns each). Even at ~20 instructions per output word that's about 1M words/s, roughly 20K words (40KB) per frame. That's more than a frame's worth of VDP DMA bandwidth, so decompression would never be the bottleneck. (In the wiki's mixed real-life benchmark, IRAM code ran at 146% of the speed of the same routine run from ROM; wiki "Timings".)
 * **Use the multi-PM trick (A7):** keep literal, match and control streams on separate PMs (PM1/PM2/XST for reads, PM4/EXT5 for writes) so the hot loop never reprograms PMC.
 * **The DRAM becomes a 128KB cache.** Typical ratios of 2–4× on MD graphics and audio turn 2MB into an effective 4–8MB of assets, with no hardware change.
-* **Caveat to verify:** VDP DMA from SVP DRAM needs the source address offset by one word. PicoDrive's `PicoSVPDma` returns `source - 2` for DRAM, and VR compensates. `samples/SVP_basic_gfx/main.asm:178-190` DMAs from 0x302000 without that compensation, so check the first word of the tiles on hardware.
+* **Caveat to verify:** VDP DMA from the SVP needs the source address set **2 bytes higher** than intended. svpdoc §4: "the code always sets DMA source address value larger by 2 … This is even true for DMAs from ROM, as it's probably hooked through SVP's memory controller." PicoDrive's `PicoSVPDma` returns `source - 2` to model it. `samples/SVP_basic_gfx/main.asm:178-190` DMAs from 0x302000 without that compensation, so check the first word of the tiles on hardware.
 
 ### C2. "Cell arrange" views: store once, read in three layouts [FACT]
 
 * The 68k sees DRAM linearly at 0x300000 and through two address-scrambling windows at 0x390000 and 0x3A0000. The exact bit permutations are in VR's own test code (wiki "Virtua Racing test code", `sub_1BDC6` / `sub_1BD70`). Cell arrange 1: `(a & 0xF001) | ((a & 0x3E) << 6) | ((a & 0xFC0) >> 5)`. Cell arrange 2: `(a & 0xF801) | ((a & 0x1E) << 6) | ((a & 0x7E0) >> 4)`.
 * Effect: a linear bitmap rendered or decompressed into DRAM can be DMA'd to VRAM *as tiles* with no conversion pass. You never need to store tile-ordered copies of bitmap data, or bitmap copies of tile data.
-* The SSP side has a matching write mode, "cell inc" (`s` bit, mode `0x4018`): +1 on even, +31 on odd addresses. Combined with `d`, the wiki confirms the decrement variant works too.
+* Per svpdoc, cell arrange only maps the **first 64KB** of DRAM (0x300000–0x30FFFF), so use that half as the "render here, DMA as tiles" buffer.
+* The SSP side has a matching write mode, "special increment" (`s` bit, mode `0x4018`): +1 on even addresses, and on odd addresses +32 according to svpdoc but +31 according to PicoDrive and the wiki's hardware test. The wiki measurement is the one taken on hardware, but settle it before relying on it. Combined with `d`, the wiki confirms the decrement variant works too.
+
+### C2b. PMC nibble-rotate read: free dither and pattern variants [FACT]
+
+* svpdoc §2.2.7: reading PMC while it's in "waiting for mode" state returns the word **rotated by 4 bits** (nibbles swapped). VR uses this on words such as `abab` to get `baba`, for chessboard dithering.
+* One stored 4bpp pattern gives its pixel-shifted and checkerboard-alternated variant for free, so you can store half as many dither and stipple patterns.
 
 ### C3. Overwrite mode: hardware nibble transparency [FACT]
 
@@ -246,6 +258,9 @@ Data for PM reads above 128KB can't be placed with `ssp16asm`. It has to be bake
 
 ## E. Documentation and sample inconsistencies (can mislead memory-map work)
 
+* svpdoc §3 still says "There were reports that SVP has internal ROM, but fortunately they were wrong." This repo's `SVP_mem_reader` and the wiki's "Internal ROM" page show there **is** a 1K-word internal ROM at 0xFC00–0xFFFF. svpdoc's program-memory table (ROM at 0x400–0xFFFF) is outdated on this point.
+* The special-increment step is +32 in svpdoc and +31 in PicoDrive and on hardware (wiki). See §C2.
+
 * `samples/SVP_basic_gfx/svp_gfx.svp:26` says "0x181000-0x1807FF" (end below start). The buffer actually starts at word 0x181000 = 68k 0x302000.
 * `samples/SVP_basic_gfx/main.asm:178` says "Source - tile data in DRAM: 0x301000", but `svp.asm:39` uses `0x302000`.
 * `svp_gfx.svp:59-71`: whether the blind write itself increments the PM address is "unconfirmed in hardware". This matters for every PM-addressed layout in §C. Resolve it with a two-word write test on the EPROM board.
@@ -272,10 +287,10 @@ Data for PM reads above 128KB can't be placed with `ssp16asm`. It has to be bake
 
 ## H. Suggested test order (cheapest and most decisive first)
 
-1. **Visually read the VR PCB**: DRAM part number (A2), and whether pads 72/74/75/98/100 have traces (A4).
-2. **A1 probe**: SSP reads at mode `0x0810–0x0817`, compared with `0x0800`.
-3. **A3**: 68k dumps of 0x200000–0x2FFFFF and 0x320000–0x38FFFF.
-4. **A2**: DRAM alias test across modes `0x18–0x1F`.
+1. **Visually read the VR PCB**: whether pads 72/74/75/98/100 have traces (A4). Also note the DRAM part number for the record (A2 is now low priority).
+2. **A1 probe**: SSP reads at mode `0x0810–0x0817`, compared with `0x0800`. Also let a `0x0800` read increment across word 0xFFFFF, since svpdoc says the carry goes into bit 20.
+3. **0xA1500A/C/E**: write and read these, and watch for any change in ROM or DRAM views (A6).
+4. **A3/A2 confirmation**: a quick 68k dump of 0x200000+ and 0x320000+ to confirm svpdoc (internal-bus echo, DRAM mirrors).
 5. **C4**: ROM reads with decrement, stride and cell modes.
 6. **A5**: sweep the PM mode "?" bits (combinations).
 7. **A6**: 0xA130F1–FF writes, and a 0xA15000–0xA150FF register scan.
