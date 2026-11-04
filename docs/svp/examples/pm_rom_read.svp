@@ -1,0 +1,20 @@
+# Read ROM through PM1 (any word address 0x000000-0x0FFFFF = whole 2MB)
+# EXT0-EXT3 only act as PMs with ST5/ST6 set: use ST=0x0060.
+# Reads are PREFETCHED: programming fetches the first word; each read returns it and fetches the next.
+org 400
+start:          ld st, 0x0060
+                ld ext6, 0x0000             # address low
+                ld ext6, 0x0808             # inc 1, addr bits 16-20 = 0x08 -> ROM word 0x080000 (68k 0x100000)
+                ld -, ext1                  # blind read: program PM1 read channel + prefetch
+                ld ext6, 0x0000             # PM4 -> DRAM word 0x180000
+                ld ext6, 0x0818
+                ld ext4, -
+                ld y, 0x0040
+copy:           ld a, ext1                  # never "ld ext4, ext1" (EXT->EXT moves are broken on the FPGA core)
+                ld ext4, a
+                ld a, y
+                subi 0x01
+                ld y, a
+                bra z=0, @copy
+                ld st, 0x0000
+done:           bra always, @done

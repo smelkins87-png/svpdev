@@ -1,0 +1,14 @@
+# Stream words into SVP DRAM through PM4 (68k sees them at 0x300000 + 2*offset)
+# FPGA note: the programming (blind) write does NOT advance the address.
+org 400
+start:          ld st, 0x0000
+                ld ext6, 0x0000             # PMC low  = word address bits 0-15
+                ld ext6, 0x0818             # PMC high = mode: inc 1 (nnn=001), addr bits 16-20 = 0x18 (DRAM)
+                ld ext4, -                  # blind write: program PM4 write channel (no memory access)
+                ld y, 0x0100                # count
+fill:           ld a, y
+                ld ext4, a                  # DRAM[n] <- A.hi, address += 1
+                subi 0x01
+                ld y, a
+                bra z=0, @fill
+done:           bra always, @done

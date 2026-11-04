@@ -1,0 +1,26 @@
+# Research probe (real hardware): read 16 words through PM1 using a mode word sent by the 68k
+# (e.g. 0x0810-0x0817 = the "unused" word window 0x100000-0x17FFFF) and dump them to DRAM 0x300000.
+# On the FPGA cores this window issues no memory access (PM data stays stale).
+org 400
+probe_init:     ld st, 0x0000
+wait_md:        ld a, ext0
+                andi 0x2
+                bra z=1, @wait_md
+                ld x, ext3                  # mode word from the 68k
+                ld st, 0x0060
+                ld ext6, 0x0000
+                ld ext6, 0x0818
+                ld ext4, -
+                ld ext6, 0x0000
+                ld ext6, x
+                ld -, ext1
+                ld y, 0x0010
+probe_loop:     ld a, ext1
+                ld ext4, a
+                ld a, y
+                subi 0x01
+                ld y, a
+                bra z=0, @probe_loop
+                ld st, 0x0000
+                ld ext3, 0x4F4B             # "OK"
+                bra always, @wait_md

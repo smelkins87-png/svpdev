@@ -205,12 +205,14 @@ The modulo is computed by `ModAdj` (`SSP160x_PKG.vhd`): the bits above the mask 
 | EXT4 | PM4 | PM4 data | PM4 write | always |
 | EXT5 | — | 0 | ignored | **never** (hardware: write-only PM, per the wiki) |
 | EXT6 | PMC | PMC_SEL=0: PMC[15:0]. PMC_SEL=1: PMC[15:0] with the nibbles of each byte swapped. **Every access toggles PMC_SEL** | PMC_SEL=0 → PMC[15:0] (address), 1 → PMC[31:16] (mode). Toggles PMC_SEL and clears PMAR_SET | — |
-| EXT7 | — | blind read: `CD[last PMAR] ← PMC[15:0]`, PMC_SEL ← 0 | ignored | — |
+| EXT7 (= `AL`, reg 15) | — | CPU side: returns **A[15:0]**. Bus side, blind read only: `CD[last PMAR] ← PMC[15:0]`, PMC_SEL ← 0 | CPU side: **A[15:0] ← value**. Bus side: nothing | — |
 
 Hardware differences:
 
 * On hardware, ST5 alone appears to enable EXT1 and EXT2 (wiki). **Here EXT2 and EXT3 need ST6.** Always use `ld st, 0x0060` before using PM0–PM3 as memory ports.
 * EXT2 reads with the ST bits clear return 0, not hardware's "random" value.
+
+> **EXT7 is AL.** Register number 15 is both "EXT7" (bus address `EA = 7`) and the accumulator low word. `ssp16asm` has no `al` name and calls it `ext7`, so `ld ext7, 0x0000` (used throughout `samples/`) **clears A[15:0]**, and `ld a, ext7` reads A[15:0]. `ld -, ext7` is the "dummy-programmed" blind access that svpdoc describes for AL (it resets PMC to "waiting for address"). On this core it also loads the custom displacement.
 
 ### 5.2 The PMAR record
 
@@ -424,6 +426,6 @@ Remedies:
 2. `SVP.vhd:469` `ROM_A <= MEM_ADDR(19 downto 0) … else "0000" & SSP_PA`.
 3. `map_svp_v2.sv:172` `rom_oe_smd = abus[23:21] == 0`, and `mem_addr_a(abus[20:1])` / `mem_addr_b(svp_rom_a[20:1])`.
 
-The PSRAM ports are already `[21:1]` and the cart has 2×8MB. Widening those three places, plus adding a bank register, is the whole job (see `flashcart-svp-beyond-2mb.md` §3B).
+The PSRAM ports are already `[21:1]` and the cart has 2×8MB. Widening those three places, plus adding a bank register, would remove the limit. **A custom mapper is out of scope for this project** (see `30-flashcarts-rom-size.md` §3B). These lines are documented so the limit is understood, not changed.
 
 Also on the SSP side, `GetNextMA` only increments 20 bits. That's harmless for banking but means a stream never crosses into a bank by itself.

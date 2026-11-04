@@ -1,5 +1,12 @@
 # Getting past the 2MB limit on the SVP: research notes
 
+> **Scope:** this file is about the **real Virtua Racing cartridge**. The project targets the FPGA cores (EverDrive Pro, MegaSD, MiSTer). On those:
+> * the address-window probes in §A don't apply (`20-fpga-core-internals.md` §5.3);
+> * the custom-mapper ideas are out of scope (project decision);
+> * §B, §C and §D still apply as written.
+>
+> For the FPGA view, start with `00-quick-reference.md`.
+
 These notes cover a full pass over the repository: the boards, the netlists, the die photos, the samples, `ssp16asm`/`svptool`, the project wiki, notaz's PicoDrive SVP emulation, and notaz's `svpdoc.txt` (2014-09-23 revision, cited below as **svpdoc**). The goal was to list every quirk, bug and oversight that bears on the 2MB ROM ceiling, and every route around it that needs **no additional hardware**.
 
 Confidence tags used below:

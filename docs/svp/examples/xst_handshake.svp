@@ -1,0 +1,14 @@
+# XST handshake template (works on real SVP, EverDrive Pro, MegaSD, MiSTer)
+# 68k side: move.w #cmd,0xA15000   (word write, cmd must be NON-ZERO)
+#           poll btst #0,0xA15005  (SA = SSP answered; reading clears it)
+#           move.w 0xA15000,d0     (read the reply)
+org 400
+main:           ld st, 0x0000               # ST5=ST6=0: EXT0 = status, EXT3 = XST
+wait_cmd:       ld a, ext0                  # bit1 = CA (68k wrote non-zero XST); read clears CA
+                andi 0x2
+                bra z=1, @wait_cmd
+                ld x, ext3                  # command word from the 68k
+                # ... do work here, result in A ...
+                ld a, x
+                ld ext3, a                  # reply -> XST, sets SA for the 68k
+                bra always, @wait_cmd

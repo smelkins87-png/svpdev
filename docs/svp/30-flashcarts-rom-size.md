@@ -1,6 +1,6 @@
 # SVP homebrew beyond 2MB on Mega EverDrive Pro and MegaSD
 
-Companion to `2mb-limit-notes.md`. That file covers the real VR cartridge. This one covers the FPGA re-implementations the project actually targets.
+Companion to `10-real-hardware-and-2mb-limit.md`. That file covers the real VR cartridge. This one covers the FPGA re-implementations the project actually targets.
 
 Sources inspected (Nov 2026):
 
@@ -34,7 +34,7 @@ The core differs from real hardware in a few ways. All of them are FPGA facts, r
 * Special increment is +1/+31 (matching PicoDrive and the wiki, not svpdoc's +32).
 * The cell-arrange formulas are the same as VR's test code.
 
-**Conclusion: no software trick on the SSP gets past 2MB on any of the three.** SSP code and every asset the SSP reads must live in the first 2MB of the image, unless the mapper is changed (§3B).
+**Conclusion: no software trick on the SSP gets past 2MB on any of the three.** SSP code and every asset the SSP reads must live in the first 2MB of the image, unless the mapper is changed (§3B, which is out of scope for this project).
 
 ---
 
@@ -112,7 +112,9 @@ Mechanics and caveats:
 * Throughput is bounded by SD and MCU speed. The 68k is halted for the duration, so this suits loading screens, not per-frame streaming.
 * **First test:** call `ed_init()` and then `ed_cmd_file_open` + `CMD_F_FRD_MEM` from a ROM running under the SVP mapper. Confirm that the MCU accepts commands in game mode and that the SVP sees the new data.
 
-### 3B. Custom SVP mapper with banking [strongest, needs Quartus]
+### 3B. Custom SVP mapper with banking [NOT PURSUED: project decision, Nov 2026]
+
+> The project owner decided **not** to build or ship a custom mapper. Target the stock mappers only. This section is kept as background on where the limit lives.
 
 Custom mappers are an officially supported feature (`fpga/README.md`: "put `mega-pro.rbf` in the same folder as the ROM"; they can also be loaded over USB for testing). `fpga/fpga_pro/map_svp` is a complete Quartus project for exactly this mapper, MIT-licensed by Krikzz. srg320's SVP core is separately licensed and permission-based, so check its terms before distributing a modified bitstream.
 
@@ -134,10 +136,10 @@ These work on all three carts. The FPGA cores already implement them:
 * SSP decompression into DRAM;
 * cell-arrange views;
 * overwrite mode;
-* strided PM reads (on these cores, include the custom displacement `nnn=7` / EXT7);
+* strided PM reads (on these cores, include the custom displacement: `nnn=7`, loaded with `ld -, ext7`);
 * the PMC nibble-rotate read.
 
-See §C of `2mb-limit-notes.md`.
+See §C of `10-real-hardware-and-2mb-limit.md`.
 
 ---
 
@@ -147,6 +149,6 @@ See §C of `2mb-limit-notes.md`.
 2. **Above 2MB:** 68k-only assets (tiles, maps, audio, compressed SSP overlays that the 68k copies into DRAM for the SSP to unpack).
 3. **One loader interface, three backends:**
    * **MiSTer:** linear 0x200000–0x2FFFFF plus SSF2 banks. Works today according to the RTL.
-   * **Pro:** 3A (stock mapper, SD overlays) or 3B (custom mapper with banks).
+   * **Pro:** 3A (stock mapper, SD overlays). 3B (custom mapper) is out of scope.
    * **MegaSD:** SSF banks if the header-combination test in §2 passes. Otherwise, ask Terraonion, or stay at 2MB and lean on §3C.
 4. Keep `"GM MK-1229 -00"` at 0x180 so all three detect the SVP.

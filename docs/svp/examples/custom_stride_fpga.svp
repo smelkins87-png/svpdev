@@ -1,0 +1,14 @@
+# FPGA-ONLY (srg320 core: EverDrive Pro / MegaSD / MiSTer): arbitrary PM stride.
+# nnn=7 uses a per-PM "custom displacement" CD loaded from PMC low by a blind read of EXT7.
+# On a real SVP nnn=7 means +128 instead.
+org 400
+start:          ld st, 0x0060
+                ld ext6, 0x0000
+                ld ext6, 0x3801             # nnn=111 (bits 13-11), ROM addr bits 16-20 = 0x01 -> word 0x010000
+                ld -, ext1                  # program + prefetch; "last PMAR" is now PM1-read
+                ld ext6, 0x0140             # PMC low = stride (320 words)
+                ld -, ext7                  # CD[PM1 read] = 0x0140, resets PMC write-half selector
+                ld a, ext1                  # ROM[0x10000]
+                ld a, ext1                  # ROM[0x10140]
+                ld st, 0x0000
+done:           bra always, @done

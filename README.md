@@ -15,6 +15,8 @@ A collection of development tools targetting SEGA's SVP chip found in the Mega D
 
 # Documentation
 
+A consolidated SVP knowledge base (memory maps, FPGA core internals, portability rules, toolchain notes, open questions) lives in [`docs/svp/`](docs/svp/README.md). Start with the [quick reference](docs/svp/00-quick-reference.md).
+
 All the research done with this project is intended to give more information about the SVP chip to allow the retrodev community to create homebrew (and run it in real hardware). As some parts of this chip are still unclear, further developments and information will be updated in the [wiki](https://github.com/jdesiloniz/svpdev/wiki) of this repository.
 
 ## License
